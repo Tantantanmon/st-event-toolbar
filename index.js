@@ -6,11 +6,8 @@ import { extension_settings, getContext } from '../../../extensions.js';
 import {
     eventSource,
     event_types,
-    generateQuietPrompt,
     setExtensionPrompt,
-    saveSettingsDebounced,
-    extension_prompt_types,
-    extension_prompt_roles
+    saveSettingsDebounced
 } from '../../../../script.js';
 
 const EXT_NAME   = 'event-toolbar';
@@ -135,22 +132,12 @@ async function applyToolbar(freeInput) {
         'Stay in character. Weave naturally into the narrative. Do not announce these events directly.'
     ].join('\n'));
 
-    // 프롬프트 삽입
-    setExtensionPrompt(
-        INJECT_KEY,
-        prompt,
-        extension_prompt_types.IN_CHAT,
-        0,
-        false,
-        extension_prompt_roles.SYSTEM
-    );
-
-    // 채팅창에 바로 출력
-    await generateQuietPrompt({ quietPrompt: '', quietToLoud: true });
-
-    // 300ms 후 제거
+    // 프롬프트 삽입 후 일반 생성 (레퍼런스 방식)
+    const { setExtensionPrompt: ctxSEP, generate } = SillyTavern.getContext();
+    ctxSEP(INJECT_KEY, prompt, 1, 0);
+    await generate('normal', {});
     setTimeout(() => {
-        setExtensionPrompt(INJECT_KEY, '', extension_prompt_types.IN_CHAT, 0);
+        try { ctxSEP(INJECT_KEY, '', 1, 0); } catch(e) {}
     }, 300);
 
     // 선택 초기화
@@ -302,7 +289,7 @@ function renderToolbar() {
     const sendForm = document.getElementById('send_form');
     if (!sendForm) return;
 
-    sendForm.insertAdjacentHTML('afterbegin', buildToolbarHTML());
+    sendForm.insertAdjacentHTML('beforebegin', buildToolbarHTML());
     bindToolbarEvents();
 }
 
