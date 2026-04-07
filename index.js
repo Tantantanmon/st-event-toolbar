@@ -937,8 +937,8 @@ function isMobile() {
 function openPopup() {
     if (popupOpen) return;
     popupOpen = true;
-    document.body.insertAdjacentHTML('beforeend', buildPopupHTML());
-    // 모바일 클래스 추가
+    const target = document.getElementById('sheld') || document.body;
+    target.insertAdjacentHTML('beforeend', buildPopupHTML());
     if (isMobile()) {
         document.getElementById('et-overlay')?.classList.add('mobile');
         document.getElementById('et-popup')?.classList.add('mobile');
