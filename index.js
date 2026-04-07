@@ -205,7 +205,7 @@ async function applyToolbar(freeInput) {
 // 팝업 HTML
 // ============================================================
 
-function buildPopupHTML() {
+function buildPopupInnerHTML() {
     const settings = getSettings();
     const cfg = settings.config;
     refreshGroups();
@@ -235,19 +235,15 @@ function buildPopupHTML() {
     `;
 
     return `
-    <div id="et-overlay">
-        <div id="et-popup">
-            <div class="et-sidebar">
-                <div class="et-sb-logo">
-                    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-                </div>
-                <div class="et-sb-divider"></div>
-                ${sidebarTabs}
-                <div class="et-sb-spacer"></div>
+        <div class="et-sidebar">
+            <div class="et-sb-logo">
+                <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </div>
-            <div class="et-main">${panels}</div>
+            <div class="et-sb-divider"></div>
+            ${sidebarTabs}
+            <div class="et-sb-spacer"></div>
         </div>
-    </div>`;
+        <div class="et-main">${panels}</div>`;
 }
 
 function buildHomePanel(cfg) {
@@ -936,13 +932,26 @@ function isMobile() {
 
 function openPopup() {
     if (popupOpen) return;
+    if (document.getElementById('et-overlay')) return;
     popupOpen = true;
-    const target = document.getElementById('sheld') || document.body;
-    target.insertAdjacentHTML('beforeend', buildPopupHTML());
-    if (isMobile()) {
-        document.getElementById('et-overlay')?.classList.add('mobile');
-        document.getElementById('et-popup')?.classList.add('mobile');
-    }
+
+    const mobile = isMobile();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'et-overlay';
+    overlay.style.cssText = `position:fixed;top:0;left:0;width:100vw;height:100vh;height:100dvh;z-index:99999;display:flex;background:rgba(0,0,0,0.45);backdrop-filter:blur(2px);${mobile?'align-items:flex-end;justify-content:center;':'align-items:center;justify-content:center;'}`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) closePopup(); });
+    overlay.addEventListener('touchstart', e => { if (e.target === overlay) closePopup(); }, { passive: true });
+
+    const popup = document.createElement('div');
+    popup.id = 'et-popup';
+    popup.style.cssText = mobile
+        ? 'position:relative;display:flex;width:100%;height:92dvh;border-radius:24px 24px 0 0;overflow:hidden;background:#fff;box-shadow:0 -8px 40px rgba(0,0,0,0.15);'
+        : 'position:relative;display:flex;width:min(480px,95vw);height:min(88vh,740px);border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,0.12);';
+
+    popup.innerHTML = buildPopupInnerHTML();
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
     bindPopupEvents();
 }
 
