@@ -29,8 +29,7 @@ const DEFAULT_TAGS = {
     conflict: ['Betrayal', 'Breakup', 'Threat', 'Walking away', 'Trust issues'],
     fight:    ['Slap', 'Cursing', 'Humiliation', 'Breaking point', 'Throwing things'],
     env:      ['Heavy rain', 'Power outage', 'First snow', 'Storm', 'Heat wave'],
-    time:     ['A few hours later', 'The next day', '3 days later', 'A week later', 'A month later']
-};
+    time:     ['A few hours later', 'The next day', '3 days later', 'A week later', 'A month later']};
 
 const GROUP_LABELS = {
     place:    '장소',
@@ -318,7 +317,7 @@ function buildTagPanel(group, tags, label, isCustom) {
                 <div class="et-header-sub">${group} tags</div>
             </div>
             <div style="display:flex;align-items:center;gap:6px;">
-                ${isCustom ? `<button class="et-group-del-btn" data-del-group="${group}">그룹 삭제</button>` : ''}
+                <button class="et-group-del-btn" data-del-group="${group}">그룹 삭제</button>
                 <button class="et-popup-close" data-close-popup>✕</button>
             </div>
         </div>
@@ -362,8 +361,8 @@ function buildToolbarHTML() {
     <div id="et-toolbar">
         <div class="et-tb-group-row">
             ${groupTabsHTML}
-            <button class="et-tb-collapse" id="et-tb-collapse">${tbCollapsed?'▲':'▼'}</button>
             <button class="et-tb-close" id="et-tb-close">✕</button>
+            <button class="et-tb-collapse" id="et-tb-collapse">${tbCollapsed?'▲':'▼'}</button>
         </div>
         <div class="et-tb-collapsible${tbCollapsed?' hidden':''}" id="et-tb-collapsible">
             <div class="et-tb-tags-area">${groupTagsHTML}</div>
@@ -564,22 +563,32 @@ function bindPopupEvents() {
             return;
         }
 
-        // 커스텀 그룹 삭제
+        // 그룹 삭제 (기본 + 커스텀)
         if (e.target.dataset.delGroup !== undefined) {
             const group = e.target.dataset.delGroup;
-            if (!confirm(`"${group}" 그룹을 삭제할까요?`)) return;
+            const label = GROUP_LABELS[group] || group;
+            if (!confirm(`"${label}" 그룹을 삭제할까요?\n기본 그룹은 초기화로 복구 가능해요.`)) return;
             const settings = getSettings();
+            // 커스텀 그룹이면 목록에서도 제거
             settings.customGroups = settings.customGroups.filter(g => g.id !== group);
+            // 태그 데이터 삭제
             delete settings.tags[group];
+            // BASE_GROUPS에서도 제거 (런타임)
+            const idx = BASE_GROUPS.indexOf(group);
+            if (idx >= 0) BASE_GROUPS.splice(idx, 1);
+            // GROUP_LABELS, GROUP_PROMPT에서도 제거
+            delete GROUP_LABELS[group];
+            delete GROUP_PROMPT[group];
             save();
             refreshGroups();
+            currentTab = 'home';
             closePopup();
             openPopup();
             return;
         }
 
-        // del 버튼
-        if (e.target.dataset.delTag) {
+        // 태그 삭제 버튼 (× 클릭)
+        if (e.target.dataset.delTag !== undefined) {
             const tag   = e.target.dataset.delTag;
             const group = e.target.dataset.delGroup;
             const settings = getSettings();
