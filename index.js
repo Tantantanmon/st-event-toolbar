@@ -307,11 +307,10 @@ function buildHomePanel(cfg) {
             </div>
             <div class="et-home-section">
                 <div class="et-home-label">Font Size</div>
-                <div class="et-font-row">
-                    <span class="et-font-label">A</span>
-                    <input class="et-font-slider" id="et-font-slider" type="range"
-                        min="0.85" max="1.3" step="0.05" value="${fontSize}" />
-                    <span class="et-font-label" style="font-size:16px;">A</span>
+                <div class="et-seg-row">
+                    <button class="et-seg-btn${fontSize<=0.9?' active':''}" data-font-size="0.88">S</button>
+                    <button class="et-seg-btn${fontSize>0.9&&fontSize<=1.1?' active':''}" data-font-size="1.0">M</button>
+                    <button class="et-seg-btn${fontSize>1.1?' active':''}" data-font-size="1.18">L</button>
                 </div>
             </div>
             <div class="et-home-section">
@@ -434,6 +433,12 @@ function renderToolbar() {
     if (!sendForm) return;
 
     sendForm.insertAdjacentHTML('beforebegin', buildToolbarHTML());
+    // 폰트 크기 적용
+    const fontSize = getSettings().config.fontSize || 1.0;
+    if (fontSize !== 1.0) {
+        const tb = document.getElementById('et-toolbar');
+        if (tb) { tb.style.transform = `scale(${fontSize})`; tb.style.transformOrigin = 'bottom center'; }
+    }
     bindToolbarEvents();
 }
 
@@ -531,13 +536,21 @@ function bindPopupEvents() {
         renderToolbar();
     });
 
-    // 폰트 크기 슬라이더
-    document.getElementById('et-font-slider')?.addEventListener('input', function() {
-        const val = parseFloat(this.value);
-        document.getElementById('et-popup').style.transform = `scale(${val})`;
-        document.getElementById('et-popup').style.transformOrigin = 'center center';
-        getSettings().config.fontSize = val;
-        save();
+    // 폰트 크기 세그먼트 버튼
+    document.querySelectorAll('.et-seg-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const val = parseFloat(this.dataset.fontSize);
+            document.querySelectorAll('.et-seg-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            // 팝업 적용
+            const popup = document.getElementById('et-popup');
+            if (popup) { popup.style.transform = `scale(${val})`; popup.style.transformOrigin = 'center center'; }
+            // 툴바 적용
+            const tb = document.getElementById('et-toolbar');
+            if (tb) { tb.style.transform = `scale(${val})`; tb.style.transformOrigin = 'bottom center'; }
+            getSettings().config.fontSize = val;
+            save();
+        });
     });
 
     // Voice 아코디언 토글
@@ -775,13 +788,19 @@ function refreshHomePanel() {
     if (!oldPanel) return;
     oldPanel.outerHTML = newHTML;
 
-    // 폰트 슬라이더
-    document.getElementById('et-font-slider')?.addEventListener('input', function() {
-        const val = parseFloat(this.value);
-        document.getElementById('et-popup').style.transform = `scale(${val})`;
-        document.getElementById('et-popup').style.transformOrigin = 'center center';
-        getSettings().config.fontSize = val;
-        save();
+    // 폰트 크기 세그먼트 버튼
+    document.querySelectorAll('.et-seg-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const val = parseFloat(this.dataset.fontSize);
+            document.querySelectorAll('.et-seg-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            const popup = document.getElementById('et-popup');
+            if (popup) { popup.style.transform = `scale(${val})`; popup.style.transformOrigin = 'center center'; }
+            const tb = document.getElementById('et-toolbar');
+            if (tb) { tb.style.transform = `scale(${val})`; tb.style.transformOrigin = 'bottom center'; }
+            getSettings().config.fontSize = val;
+            save();
+        });
     });
 
     // Voice

@@ -750,22 +750,23 @@
 }
 .et-reset-all-btn:hover { background: #fee2e2; }
 
-/* ── 폰트 크기 슬라이더 ── */
-.et-font-row {
+/* ── 폰트 크기 세그먼트 버튼 ── */
+.et-seg-row {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 4px 2px;
+    gap: 6px;
 }
-.et-font-label {
-    font-size: 11px;
-    color: #9ca3af;
-    flex-shrink: 0;
-    font-weight: 500;
-}
-.et-font-slider {
+.et-seg-btn {
     flex: 1;
-    height: 4px;
-    accent-color: #1f2937;
+    padding: 7px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 500;
+    color: #6b7280;
     cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
 }
+.et-seg-btn:hover { border-color: #9ca3af; color: #374151; }
+.et-seg-btn.active { background: #1f2937; color: #fff; border-color: #1f2937; }
