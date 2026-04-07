@@ -54,7 +54,11 @@
     padding: 14px 0;
     gap: 2px;
     flex-shrink: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
 }
+.et-sidebar::-webkit-scrollbar { display: none; }
 .et-sb-logo {
     width: 30px; height: 30px;
     background: #1f2937;
