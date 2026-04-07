@@ -10,8 +10,9 @@ import {
     saveSettingsDebounced
 } from '../../../../script.js';
 
-const EXT_NAME   = 'event-toolbar';
-const INJECT_KEY = 'et-toolbar-prompt';
+const EXT_NAME    = 'event-toolbar';
+const INJECT_KEY  = 'et-toolbar-prompt';
+const STYLE_KEY   = 'et-style-prompt';
 
 // ============================================================
 // 기본 데이터
@@ -27,7 +28,8 @@ const DEFAULT_TAGS = {
     incident: ['Sudden visit', 'Secret revealed', 'Shocking news', 'Accident', 'Crisis'],
     conflict: ['Betrayal', 'Breakup', 'Threat', 'Walking away', 'Trust issues'],
     fight:    ['Slap', 'Cursing', 'Humiliation', 'Breaking point', 'Throwing things'],
-    env:      ['Heavy rain', 'Power outage', 'First snow', 'Storm', 'Heat wave']
+    env:      ['Heavy rain', 'Power outage', 'First snow', 'Storm', 'Heat wave'],
+    time:     ['A few hours later', 'The next day', '3 days later', 'A week later', 'A month later']
 };
 
 const GROUP_LABELS = {
@@ -40,7 +42,8 @@ const GROUP_LABELS = {
     incident: '사건',
     conflict: '갈등',
     fight:    '싸움',
-    env:      '환경'
+    env:      '환경',
+    time:     '시간'
 };
 
 const GROUP_PROMPT = {
@@ -53,19 +56,25 @@ const GROUP_PROMPT = {
     incident: (tags) => `The following event occurs suddenly: ${tags.join(', ')}`,
     conflict: (tags) => `Introduce conflict: ${tags.join(', ')}`,
     fight:    (tags) => `Escalate into a physical or verbal fight: ${tags.join(', ')}`,
-    env:      (tags) => `The environment changes: ${tags.join(', ')}`
+    env:      (tags) => `The environment changes: ${tags.join(', ')}`,
+    time:     (tags) => `Time skip — ${tags.join(', ')}`
 };
 
-const GROUPS = Object.keys(DEFAULT_TAGS);
+// 기본 그룹 (고정)
+const BASE_GROUPS = Object.keys(DEFAULT_TAGS);
+// 커스텀 그룹 포함 전체 그룹 (동적)
+let GROUPS = [...BASE_GROUPS];
 
 // ============================================================
 // 상태
 // ============================================================
 
-let popupOpen    = false;
-let currentTab   = 'home';
+let popupOpen      = false;
+let currentTab     = 'home';
 let currentTbGroup = 'place';
-let tbSelected   = {}; // { groupId: [tagName, ...] }
+let tbSelected     = {};
+let tbCollapsed    = false;
+let currentCharKey = null;
 
 // ============================================================
 // 설정 헬퍼
@@ -74,18 +83,54 @@ let tbSelected   = {}; // { groupId: [tagName, ...] }
 function getSettings() {
     if (!extension_settings[EXT_NAME]) {
         extension_settings[EXT_NAME] = {
-            config: { toolbar_visible: true },
-            world: '',
-            tags: JSON.parse(JSON.stringify(DEFAULT_TAGS))
+            config:       { toolbar_visible: true },
+            world:        '',
+            tags:         JSON.parse(JSON.stringify(DEFAULT_TAGS)),
+            customGroups: [],
+            chars:        {}
         };
     }
-    if (!extension_settings[EXT_NAME].config) {
-        extension_settings[EXT_NAME].config = { toolbar_visible: true };
+    const s = extension_settings[EXT_NAME];
+    if (!s.config)       s.config       = { toolbar_visible: true };
+    if (!s.tags)         s.tags         = JSON.parse(JSON.stringify(DEFAULT_TAGS));
+    if (!s.customGroups) s.customGroups = [];
+    if (!s.chars)        s.chars        = {};
+    return s;
+}
+
+function getCharKey() {
+    try {
+        const c = SillyTavern.getContext();
+        const char = c?.characters?.[c?.characterId];
+        if (!char) return 'default';
+        return `${char.name}_${char.avatar}`.replace(/[^a-zA-Z0-9가-힣_]/g, '_');
+    } catch(e) { return 'default'; }
+}
+
+function getCharData() {
+    const settings = getSettings();
+    const key = getCharKey();
+    if (!settings.chars[key]) settings.chars[key] = { styles: [] };
+    if (!settings.chars[key].styles) settings.chars[key].styles = [];
+    return settings.chars[key];
+}
+
+// GROUPS 동적 갱신
+function refreshGroups() {
+    const settings = getSettings();
+    GROUPS = [...BASE_GROUPS, ...(settings.customGroups || []).map(g => g.id)];
+}
+
+// 글쓰기 스타일 프롬프트 삽입
+function updateStylePrompt() {
+    const charData = getCharData();
+    const active = (charData.styles || []).find(s => s.active);
+    const { setExtensionPrompt: ctxSEP } = SillyTavern.getContext();
+    if (active && active.prompt && active.prompt.trim()) {
+        ctxSEP(STYLE_KEY, wrap(`Writing Style:\n${active.prompt.trim()}`), 1, 1);
+    } else {
+        ctxSEP(STYLE_KEY, '', 1, 1);
     }
-    if (!extension_settings[EXT_NAME].tags) {
-        extension_settings[EXT_NAME].tags = JSON.parse(JSON.stringify(DEFAULT_TAGS));
-    }
-    return extension_settings[EXT_NAME];
 }
 
 function save() { saveSettingsDebounced(); }
@@ -106,17 +151,19 @@ async function applyToolbar(freeInput) {
     const settings = getSettings();
     const parts = [];
 
-    // 세계관
-    if (settings.world && settings.world.trim()) {
-        parts.push(`World Setting: ${settings.world.trim()}`);
-    }
-
     // 선택된 태그 그룹별 프롬프트
     GROUPS.forEach(group => {
         const tags = tbSelected[group];
         if (!tags || tags.length === 0) return;
         const fn = GROUP_PROMPT[group];
-        if (fn) parts.push(fn(tags));
+        if (fn) {
+            parts.push(fn(tags));
+        } else {
+            // 커스텀 그룹: 그룹 이름 + 태그 그대로
+            const cg = settings.customGroups.find(g => g.id === group);
+            const label = cg ? cg.label : group;
+            parts.push(`${label}: ${tags.join(', ')}`);
+        }
     });
 
     // 자유 입력
@@ -132,7 +179,7 @@ async function applyToolbar(freeInput) {
         'Stay in character. Weave naturally into the narrative. Do not announce these events directly.'
     ].join('\n'));
 
-    // 프롬프트 삽입 후 일반 생성 (레퍼런스 방식)
+    // 프롬프트 삽입 후 일반 생성
     const { setExtensionPrompt: ctxSEP, generate } = SillyTavern.getContext();
     ctxSEP(INJECT_KEY, prompt, 1, 0);
     await generate('normal', {});
@@ -153,18 +200,30 @@ async function applyToolbar(freeInput) {
 function buildPopupHTML() {
     const settings = getSettings();
     const cfg = settings.config;
+    refreshGroups();
+
+    const customGroupTabs = (settings.customGroups || []).map(g =>
+        `<div class="et-sb-tab${currentTab===g.id?' active':''}" data-et-tab="${g.id}">${g.label}</div>`
+    ).join('');
 
     const sidebarTabs = `
         <div class="et-sb-tab${currentTab==='home'?' active':''}" data-et-tab="home">홈</div>
         <div class="et-sb-divider"></div>
-        ${GROUPS.map(g =>
+        ${BASE_GROUPS.map(g =>
             `<div class="et-sb-tab${currentTab===g?' active':''}" data-et-tab="${g}">${GROUP_LABELS[g]}</div>`
         ).join('')}
+        ${customGroupTabs}
+        <div class="et-sb-add-group" id="et-sb-add-group">+</div>
     `;
 
+    const customGroupPanels = (settings.customGroups || []).map(g =>
+        buildTagPanel(g.id, settings.tags[g.id] || [], g.label, true)
+    ).join('');
+
     const panels = `
-        ${buildHomePanel(cfg, settings.world)}
-        ${GROUPS.map(g => buildTagPanel(g, settings.tags[g] || [])).join('')}
+        ${buildHomePanel(cfg)}
+        ${BASE_GROUPS.map(g => buildTagPanel(g, settings.tags[g] || [], GROUP_LABELS[g], false)).join('')}
+        ${customGroupPanels}
     `;
 
     return `
@@ -183,7 +242,27 @@ function buildPopupHTML() {
     </div>`;
 }
 
-function buildHomePanel(cfg, world) {
+function buildHomePanel(cfg) {
+    const charData = getCharData();
+    const styles = charData.styles || [];
+
+    const stylesHTML = styles.map((s, i) => `
+        <div class="et-style-item${s.open?' open':''}" data-style-idx="${i}">
+            <div class="et-style-header" data-style-toggle="${i}">
+                <div class="et-style-radio${s.active?' on':''}" data-style-select="${i}"></div>
+                <div class="et-style-name">${s.name}</div>
+                <div class="et-style-status${s.active?' active':''}">${s.active?'ON':'OFF'}</div>
+                <div class="et-style-chevron">▾</div>
+            </div>
+            <div class="et-style-body">
+                <textarea class="et-style-textarea" data-style-textarea="${i}" rows="4">${s.prompt||''}</textarea>
+                <div class="et-style-actions">
+                    <button class="et-style-save" data-style-save="${i}">저장</button>
+                    <button class="et-style-del" data-style-del="${i}">삭제</button>
+                </div>
+            </div>
+        </div>`).join('');
+
     return `
     <div class="et-panel${currentTab==='home'?' active':''}" id="et-panel-home">
         <div class="et-header">
@@ -191,6 +270,7 @@ function buildHomePanel(cfg, world) {
                 <div class="et-header-title">Event Toolbar</div>
                 <div class="et-header-sub">상황 태그 관리</div>
             </div>
+            <button class="et-popup-close" id="et-popup-close">✕</button>
         </div>
         <div class="et-scroll">
             <div class="et-home-section">
@@ -204,16 +284,16 @@ function buildHomePanel(cfg, world) {
                 </div>
             </div>
             <div class="et-home-section">
-                <div class="et-home-label">World</div>
-                <textarea class="et-world-textarea" id="et-world-input" rows="4"
-                    placeholder="세계관 설정을 입력하세요&#10;예: 현대 한국 배경, 마법 없음...">${world||''}</textarea>
+                <div class="et-home-label">Writing Style</div>
+                ${stylesHTML}
+                <button class="et-style-add" id="et-style-add">+ 스타일 추가</button>
             </div>
         </div>
     </div>`;
 }
 
-function buildTagPanel(group, tags) {
-    const label = GROUP_LABELS[group];
+function buildTagPanel(group, tags, label, isCustom) {
+    label = label || GROUP_LABELS[group] || group;
     const tagsHTML = tags.map(t => `
         <div class="et-tag-chip" data-tag="${t}" data-group="${group}">
             ${t}<span class="et-tag-chip-del" data-del-tag="${t}" data-del-group="${group}">×</span>
@@ -226,6 +306,7 @@ function buildTagPanel(group, tags) {
                 <div class="et-header-title">${label}</div>
                 <div class="et-header-sub">${group} tags</div>
             </div>
+            ${isCustom ? `<button class="et-group-del-btn" data-del-group="${group}">그룹 삭제</button>` : ''}
         </div>
         <div class="et-scroll">
             <div class="et-tag-wrap" id="et-wrap-${group}">
@@ -247,10 +328,12 @@ function buildTagPanel(group, tags) {
 function buildToolbarHTML() {
     const settings = getSettings();
     const tags = settings.tags;
+    refreshGroups();
 
-    const groupTabsHTML = GROUPS.map(g =>
-        `<button class="et-tb-group-tab${g===currentTbGroup?' active':''}" data-tb-group="${g}">${GROUP_LABELS[g]}</button>`
-    ).join('');
+    const groupTabsHTML = GROUPS.map(g => {
+        const label = GROUP_LABELS[g] || (settings.customGroups.find(c=>c.id===g)?.label) || g;
+        return `<button class="et-tb-group-tab${g===currentTbGroup?' active':''}" data-tb-group="${g}">${label}</button>`;
+    }).join('');
 
     const groupTagsHTML = GROUPS.map(g => `
         <div class="et-tb-tag-group${g===currentTbGroup?' active':''}" id="et-tb-group-${g}">
@@ -265,11 +348,14 @@ function buildToolbarHTML() {
     <div id="et-toolbar">
         <div class="et-tb-group-row">
             ${groupTabsHTML}
+            <button class="et-tb-collapse" id="et-tb-collapse">${tbCollapsed?'▲':'▼'}</button>
             <button class="et-tb-close" id="et-tb-close">✕</button>
         </div>
-        <div class="et-tb-tags-area">${groupTagsHTML}</div>
-        <div class="et-tb-selected-area" id="et-tb-selected-area">
-            <div class="et-tb-selected-label">선택됨</div>
+        <div class="et-tb-collapsible${tbCollapsed?' hidden':''}" id="et-tb-collapsible">
+            <div class="et-tb-tags-area">${groupTagsHTML}</div>
+            <div class="et-tb-selected-area" id="et-tb-selected-area">
+                <div class="et-tb-selected-label">선택됨</div>
+            </div>
         </div>
         <div class="et-tb-bottom-row">
             <input class="et-tb-free-input" id="et-tb-free" placeholder="직접 입력... (선택사항)" />
@@ -345,6 +431,9 @@ function bindPopupEvents() {
         if (e.target.id === 'et-overlay') closePopup();
     });
 
+    // X 버튼 닫기
+    document.getElementById('et-popup-close')?.addEventListener('click', () => closePopup());
+
     // 사이드바 탭
     document.querySelectorAll('.et-sb-tab').forEach(tab => {
         tab.addEventListener('click', () => {
@@ -356,6 +445,23 @@ function bindPopupEvents() {
         });
     });
 
+    // 커스텀 그룹 추가 버튼
+    document.getElementById('et-sb-add-group')?.addEventListener('click', () => {
+        const name = prompt('그룹 이름 입력:');
+        if (!name || !name.trim()) return;
+        const label = name.trim();
+        const id = 'cg_' + Date.now();
+        const settings = getSettings();
+        settings.customGroups.push({ id, label });
+        settings.tags[id] = [];
+        save();
+        // 팝업 재렌더링
+        closePopup();
+        openPopup();
+        // 새 탭으로 이동
+        currentTab = id;
+    });
+
     // 툴바 토글
     document.getElementById('et-toolbar-toggle')?.addEventListener('click', function() {
         const cfg = getSettings().config;
@@ -365,21 +471,88 @@ function bindPopupEvents() {
         renderToolbar();
     });
 
-    // 세계관 입력
-    document.getElementById('et-world-input')?.addEventListener('input', function() {
-        getSettings().world = this.value;
+    // 글쓰기 스타일 추가
+    document.getElementById('et-style-add')?.addEventListener('click', () => {
+        const name = prompt('스타일 이름:');
+        if (!name || !name.trim()) return;
+        const charData = getCharData();
+        charData.styles.push({ name: name.trim(), prompt: '', active: false, open: true });
         save();
+        refreshHomePanel();
     });
 
-    // 태그 칩 삭제
+    // 팝업 이벤트 위임
     document.getElementById('et-popup')?.addEventListener('click', (e) => {
+
+        // 글쓰기 스타일 아코디언 토글
+        if (e.target.dataset.styleToggle !== undefined) {
+            const idx = parseInt(e.target.dataset.styleToggle);
+            const charData = getCharData();
+            charData.styles[idx].open = !charData.styles[idx].open;
+            save();
+            const item = e.target.closest('.et-style-item');
+            item?.classList.toggle('open');
+            return;
+        }
+
+        // 글쓰기 스타일 라디오 선택
+        if (e.target.dataset.styleSelect !== undefined) {
+            e.stopPropagation();
+            const idx = parseInt(e.target.dataset.styleSelect);
+            const charData = getCharData();
+            charData.styles.forEach((s, i) => s.active = (i === idx ? !s.active : false));
+            save();
+            updateStylePrompt();
+            refreshHomePanel();
+            return;
+        }
+
+        // 글쓰기 스타일 저장
+        if (e.target.dataset.styleSave !== undefined) {
+            const idx = parseInt(e.target.dataset.styleSave);
+            const charData = getCharData();
+            const ta = document.querySelector(`[data-style-textarea="${idx}"]`);
+            if (ta) charData.styles[idx].prompt = ta.value;
+            save();
+            updateStylePrompt();
+            const btn = e.target;
+            btn.textContent = '저장됨 ✓';
+            setTimeout(() => btn.textContent = '저장', 1500);
+            return;
+        }
+
+        // 글쓰기 스타일 삭제
+        if (e.target.dataset.styleDel !== undefined) {
+            if (!confirm('스타일을 삭제할까요?')) return;
+            const idx = parseInt(e.target.dataset.styleDel);
+            const charData = getCharData();
+            charData.styles.splice(idx, 1);
+            save();
+            updateStylePrompt();
+            refreshHomePanel();
+            return;
+        }
+
+        // 커스텀 그룹 삭제
+        if (e.target.dataset.delGroup !== undefined) {
+            const group = e.target.dataset.delGroup;
+            if (!confirm(`"${group}" 그룹을 삭제할까요?`)) return;
+            const settings = getSettings();
+            settings.customGroups = settings.customGroups.filter(g => g.id !== group);
+            delete settings.tags[group];
+            save();
+            refreshGroups();
+            closePopup();
+            openPopup();
+            return;
+        }
+
         // del 버튼
         if (e.target.dataset.delTag) {
             const tag   = e.target.dataset.delTag;
             const group = e.target.dataset.delGroup;
             const settings = getSettings();
             settings.tags[group] = (settings.tags[group]||[]).filter(t => t !== tag);
-            // DOM에서 제거
             e.target.closest('.et-tag-chip')?.remove();
             return;
         }
@@ -398,10 +571,7 @@ function bindPopupEvents() {
                     const val = input.value.trim();
                     const settings = getSettings();
                     if (!settings.tags[group]) settings.tags[group] = [];
-                    if (!settings.tags[group].includes(val)) {
-                        settings.tags[group].push(val);
-                    }
-                    // DOM에 추가
+                    if (!settings.tags[group].includes(val)) settings.tags[group].push(val);
                     const chip = document.createElement('div');
                     chip.className = 'et-tag-chip';
                     chip.dataset.tag = val;
@@ -419,8 +589,7 @@ function bindPopupEvents() {
         // 저장 버튼
         if (e.target.dataset.saveGroup !== undefined) {
             save();
-            renderToolbar(); // 툴바도 갱신
-            // 저장 완료 피드백
+            renderToolbar();
             const btn = e.target;
             btn.textContent = '저장됨 ✓';
             setTimeout(() => btn.textContent = '저장', 1500);
@@ -430,14 +599,19 @@ function bindPopupEvents() {
         // 초기화 버튼
         if (e.target.dataset.resetGroup !== undefined) {
             const group = e.target.dataset.resetGroup;
-            if (!confirm(`"${GROUP_LABELS[group]}" 태그를 초기화할까요?`)) return;
-            const settings = getSettings();
-            settings.tags[group] = JSON.parse(JSON.stringify(DEFAULT_TAGS[group]));
+            const isCustom = !BASE_GROUPS.includes(group);
+            if (isCustom) {
+                if (!confirm('커스텀 그룹 태그를 초기화할까요?')) return;
+                getSettings().tags[group] = [];
+            } else {
+                if (!confirm(`"${GROUP_LABELS[group]}" 태그를 초기화할까요?`)) return;
+                getSettings().tags[group] = JSON.parse(JSON.stringify(DEFAULT_TAGS[group]));
+            }
             save();
-            // 태그 패널 재렌더링
             const wrap = document.getElementById(`et-wrap-${group}`);
             if (wrap) {
-                wrap.innerHTML = settings.tags[group].map(t => `
+                const tags = getSettings().tags[group] || [];
+                wrap.innerHTML = tags.map(t => `
                     <div class="et-tag-chip" data-tag="${t}" data-group="${group}">
                         ${t}<span class="et-tag-chip-del" data-del-tag="${t}" data-del-group="${group}">×</span>
                     </div>`).join('') +
@@ -446,6 +620,32 @@ function bindPopupEvents() {
             renderToolbar();
             return;
         }
+    });
+}
+
+// 홈 패널만 재렌더링
+function refreshHomePanel() {
+    const cfg = getSettings().config;
+    const newHTML = buildHomePanel(cfg);
+    const oldPanel = document.getElementById('et-panel-home');
+    if (!oldPanel) return;
+    oldPanel.outerHTML = newHTML;
+    // 이벤트 재바인딩
+    document.getElementById('et-popup-close')?.addEventListener('click', () => closePopup());
+    document.getElementById('et-toolbar-toggle')?.addEventListener('click', function() {
+        const cfg = getSettings().config;
+        cfg.toolbar_visible = !cfg.toolbar_visible;
+        this.classList.toggle('off', !cfg.toolbar_visible);
+        save();
+        renderToolbar();
+    });
+    document.getElementById('et-style-add')?.addEventListener('click', () => {
+        const name = prompt('스타일 이름:');
+        if (!name || !name.trim()) return;
+        const charData = getCharData();
+        charData.styles.push({ name: name.trim(), prompt: '', active: false, open: true });
+        save();
+        refreshHomePanel();
     });
 }
 
@@ -465,13 +665,19 @@ function bindToolbarEvents() {
         });
     });
 
+    // 접기/펼치기
+    document.getElementById('et-tb-collapse')?.addEventListener('click', function() {
+        tbCollapsed = !tbCollapsed;
+        document.getElementById('et-tb-collapsible')?.classList.toggle('hidden', tbCollapsed);
+        this.textContent = tbCollapsed ? '▲' : '▼';
+    });
+
     // X 닫기
     document.getElementById('et-tb-close')?.addEventListener('click', () => {
         const cfg = getSettings().config;
         cfg.toolbar_visible = false;
         save();
         document.getElementById('et-toolbar')?.remove();
-        // 팝업 열려있으면 토글 상태 갱신
         document.getElementById('et-toolbar-toggle')?.classList.add('off');
     });
 
@@ -607,6 +813,7 @@ function closePopup() {
 
 eventSource.on(event_types.APP_READY, () => {
     getSettings();
+    refreshGroups();
 
     // 매직완드 메뉴 항목
     const wandMenu = document.getElementById('extensionsMenu');
@@ -622,12 +829,16 @@ eventSource.on(event_types.APP_READY, () => {
     }
 
     // 툴바 렌더링
+    currentCharKey = getCharKey();
     renderToolbar();
+    updateStylePrompt();
 
     console.log('[Event Toolbar] loaded successfully.');
 });
 
 eventSource.on(event_types.CHAT_CHANGED, () => {
+    currentCharKey = getCharKey();
     renderToolbar();
+    updateStylePrompt();
     tbSelected = {};
 });
