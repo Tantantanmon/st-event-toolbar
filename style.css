@@ -749,3 +749,23 @@
     transition: background 0.15s;
 }
 .et-reset-all-btn:hover { background: #fee2e2; }
+
+/* ── 폰트 크기 슬라이더 ── */
+.et-font-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 2px;
+}
+.et-font-label {
+    font-size: 11px;
+    color: #9ca3af;
+    flex-shrink: 0;
+    font-weight: 500;
+}
+.et-font-slider {
+    flex: 1;
+    height: 4px;
+    accent-color: #1f2937;
+    cursor: pointer;
+}

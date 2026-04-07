@@ -13,6 +13,7 @@ import {
 const EXT_NAME    = 'event-toolbar';
 const INJECT_KEY  = 'et-toolbar-prompt';
 const STYLE_KEY   = 'et-style-prompt';
+const TONE_KEY    = 'et-tone-prompt';
 
 // ============================================================
 // 기본 데이터
@@ -82,7 +83,7 @@ let currentCharKey = null;
 function getSettings() {
     if (!extension_settings[EXT_NAME]) {
         extension_settings[EXT_NAME] = {
-            config:       { toolbar_visible: true },
+            config:       { toolbar_visible: true, fontSize: 1.0 },
             tags:         JSON.parse(JSON.stringify(DEFAULT_TAGS)),
             customGroups: [],
             globalStyles: [],
@@ -90,11 +91,12 @@ function getSettings() {
         };
     }
     const s = extension_settings[EXT_NAME];
-    if (!s.config)        s.config        = { toolbar_visible: true };
-    if (!s.tags)          s.tags          = JSON.parse(JSON.stringify(DEFAULT_TAGS));
-    if (!s.customGroups)  s.customGroups  = [];
-    if (!s.globalStyles)  s.globalStyles  = [];
-    if (!s.chars)         s.chars         = {};
+    if (!s.config)                s.config        = { toolbar_visible: true, fontSize: 1.0 };
+    if (s.config.fontSize == null) s.config.fontSize = 1.0;
+    if (!s.tags)                  s.tags          = JSON.parse(JSON.stringify(DEFAULT_TAGS));
+    if (!s.customGroups)          s.customGroups  = [];
+    if (!s.globalStyles)          s.globalStyles  = [];
+    if (!s.chars)                 s.chars         = {};
     return s;
 }
 
@@ -110,7 +112,8 @@ function getCharKey() {
 function getCharData() {
     const settings = getSettings();
     const key = getCharKey();
-    if (!settings.chars[key]) settings.chars[key] = { activeStyleId: null };
+    if (!settings.chars[key]) settings.chars[key] = { activeStyleId: null, tone: '', toneOpen: false };
+    if (settings.chars[key].tone == null) settings.chars[key].tone = '';
     return settings.chars[key];
 }
 
@@ -130,6 +133,17 @@ function updateStylePrompt() {
         ctxSEP(STYLE_KEY, wrap(`Writing Style:\n${active.prompt.trim()}`), 1, 1);
     } else {
         ctxSEP(STYLE_KEY, '', 1, 1);
+    }
+}
+
+// 캐릭터 말투 프롬프트 삽입
+function updateTonePrompt() {
+    const charData = getCharData();
+    const { setExtensionPrompt: ctxSEP } = SillyTavern.getContext();
+    if (charData.tone && charData.tone.trim()) {
+        ctxSEP(TONE_KEY, wrap(`Character Voice:\n${charData.tone.trim()}`), 1, 2);
+    } else {
+        ctxSEP(TONE_KEY, '', 1, 2);
     }
 }
 
@@ -251,6 +265,9 @@ function buildHomePanel(cfg) {
     const charData  = getCharData();
     const styles    = settings.globalStyles || [];
     const activeId  = charData.activeStyleId;
+    const fontSize  = settings.config.fontSize || 1.0;
+    const tone      = charData.tone || '';
+    const toneOpen  = charData.toneOpen || false;
 
     const stylesHTML = styles.map((s) => `
         <div class="et-style-item${s.open?' open':''}" data-style-id="${s.id}">
@@ -289,9 +306,35 @@ function buildHomePanel(cfg) {
                 </div>
             </div>
             <div class="et-home-section">
+                <div class="et-home-label">Font Size</div>
+                <div class="et-font-row">
+                    <span class="et-font-label">A</span>
+                    <input class="et-font-slider" id="et-font-slider" type="range"
+                        min="0.85" max="1.3" step="0.05" value="${fontSize}" />
+                    <span class="et-font-label" style="font-size:16px;">A</span>
+                </div>
+            </div>
+            <div class="et-home-section">
                 <div class="et-home-label">Writing Style</div>
                 ${stylesHTML}
                 <button class="et-style-add" id="et-style-add">+ 스타일 추가</button>
+            </div>
+            <div class="et-home-section">
+                <div class="et-home-label">Voice</div>
+                <div class="et-style-item${toneOpen?' open':''}" id="et-tone-item">
+                    <div class="et-style-header" id="et-tone-toggle">
+                        <div class="et-style-name" style="font-size:12px;color:#9ca3af;">캐릭터 말투 (이 캐릭터에만 적용)</div>
+                        <div class="et-style-chevron">▾</div>
+                    </div>
+                    <div class="et-style-body">
+                        <textarea class="et-style-textarea" id="et-tone-textarea" rows="5"
+                            placeholder="예: {{char}} speaks in short, clipped sentences. Low voice, never raises it...">${tone}</textarea>
+                        <div class="et-style-actions">
+                            <button class="et-style-save" id="et-tone-save">저장</button>
+                            <button class="et-style-del" id="et-tone-clear">지우기</button>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="et-home-section">
                 <div class="et-home-label">Danger Zone</div>
@@ -486,6 +529,46 @@ function bindPopupEvents() {
         this.classList.toggle('off', !cfg.toolbar_visible);
         save();
         renderToolbar();
+    });
+
+    // 폰트 크기 슬라이더
+    document.getElementById('et-font-slider')?.addEventListener('input', function() {
+        const val = parseFloat(this.value);
+        document.getElementById('et-popup').style.transform = `scale(${val})`;
+        document.getElementById('et-popup').style.transformOrigin = 'center center';
+        getSettings().config.fontSize = val;
+        save();
+    });
+
+    // Voice 아코디언 토글
+    document.getElementById('et-tone-toggle')?.addEventListener('click', () => {
+        const charData = getCharData();
+        charData.toneOpen = !charData.toneOpen;
+        save();
+        document.getElementById('et-tone-item')?.classList.toggle('open', charData.toneOpen);
+    });
+
+    // Voice 저장
+    document.getElementById('et-tone-save')?.addEventListener('click', function() {
+        const ta = document.getElementById('et-tone-textarea');
+        if (!ta) return;
+        const charData = getCharData();
+        charData.tone = ta.value;
+        save();
+        updateTonePrompt();
+        this.textContent = '저장됨 ✓';
+        setTimeout(() => this.textContent = '저장', 1500);
+    });
+
+    // Voice 지우기
+    document.getElementById('et-tone-clear')?.addEventListener('click', () => {
+        if (!confirm('말투를 지울까요?')) return;
+        const ta = document.getElementById('et-tone-textarea');
+        if (ta) ta.value = '';
+        const charData = getCharData();
+        charData.tone = '';
+        save();
+        updateTonePrompt();
     });
 
     // 글쓰기 스타일 추가 (전역 풀)
@@ -691,6 +774,43 @@ function refreshHomePanel() {
     const oldPanel = document.getElementById('et-panel-home');
     if (!oldPanel) return;
     oldPanel.outerHTML = newHTML;
+
+    // 폰트 슬라이더
+    document.getElementById('et-font-slider')?.addEventListener('input', function() {
+        const val = parseFloat(this.value);
+        document.getElementById('et-popup').style.transform = `scale(${val})`;
+        document.getElementById('et-popup').style.transformOrigin = 'center center';
+        getSettings().config.fontSize = val;
+        save();
+    });
+
+    // Voice
+    document.getElementById('et-tone-toggle')?.addEventListener('click', () => {
+        const charData = getCharData();
+        charData.toneOpen = !charData.toneOpen;
+        save();
+        document.getElementById('et-tone-item')?.classList.toggle('open', charData.toneOpen);
+    });
+    document.getElementById('et-tone-save')?.addEventListener('click', function() {
+        const ta = document.getElementById('et-tone-textarea');
+        if (!ta) return;
+        const charData = getCharData();
+        charData.tone = ta.value;
+        save();
+        updateTonePrompt();
+        this.textContent = '저장됨 ✓';
+        setTimeout(() => this.textContent = '저장', 1500);
+    });
+    document.getElementById('et-tone-clear')?.addEventListener('click', () => {
+        if (!confirm('말투를 지울까요?')) return;
+        const ta = document.getElementById('et-tone-textarea');
+        if (ta) ta.value = '';
+        const charData = getCharData();
+        charData.tone = '';
+        save();
+        updateTonePrompt();
+    });
+
     document.getElementById('et-popup-close')?.addEventListener('click', () => closePopup());
     document.getElementById('et-toolbar-toggle')?.addEventListener('click', function() {
         const cfg = getSettings().config;
@@ -950,6 +1070,12 @@ function openPopup() {
         : 'position:relative;display:flex;width:min(480px,95vw);height:min(88vh,740px);border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,0.12);';
 
     popup.innerHTML = buildPopupInnerHTML();
+    // 저장된 폰트 크기 적용
+    const fontSize = getSettings().config.fontSize || 1.0;
+    if (fontSize !== 1.0) {
+        popup.style.transform = `scale(${fontSize})`;
+        popup.style.transformOrigin = 'center center';
+    }
     overlay.appendChild(popup);
     document.body.appendChild(overlay);
     bindPopupEvents();
@@ -985,6 +1111,7 @@ eventSource.on(event_types.APP_READY, () => {
     currentCharKey = getCharKey();
     renderToolbar();
     updateStylePrompt();
+    updateTonePrompt();
 
     console.log('[Event Toolbar] loaded successfully.');
 });
@@ -993,5 +1120,6 @@ eventSource.on(event_types.CHAT_CHANGED, () => {
     currentCharKey = getCharKey();
     renderToolbar();
     updateStylePrompt();
+    updateTonePrompt();
     tbSelected = {};
 });
