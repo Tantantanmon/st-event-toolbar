@@ -433,12 +433,7 @@ function renderToolbar() {
     if (!sendForm) return;
 
     sendForm.insertAdjacentHTML('beforebegin', buildToolbarHTML());
-    // 폰트 크기 적용
-    const fontSize = getSettings().config.fontSize || 1.0;
-    if (fontSize !== 1.0) {
-        const tb = document.getElementById('et-toolbar');
-        if (tb) { tb.style.transform = `scale(${fontSize})`; tb.style.transformOrigin = 'bottom center'; }
-    }
+    applyFontSize(getSettings().config.fontSize || 1.0);
     bindToolbarEvents();
 }
 
@@ -542,12 +537,7 @@ function bindPopupEvents() {
             const val = parseFloat(this.dataset.fontSize);
             document.querySelectorAll('.et-seg-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-            // 팝업 적용
-            const popup = document.getElementById('et-popup');
-            if (popup) { popup.style.transform = `scale(${val})`; popup.style.transformOrigin = 'center center'; }
-            // 툴바 적용
-            const tb = document.getElementById('et-toolbar');
-            if (tb) { tb.style.transform = `scale(${val})`; tb.style.transformOrigin = 'bottom center'; }
+            applyFontSize(val);
             getSettings().config.fontSize = val;
             save();
         });
@@ -794,10 +784,7 @@ function refreshHomePanel() {
             const val = parseFloat(this.dataset.fontSize);
             document.querySelectorAll('.et-seg-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-            const popup = document.getElementById('et-popup');
-            if (popup) { popup.style.transform = `scale(${val})`; popup.style.transformOrigin = 'center center'; }
-            const tb = document.getElementById('et-toolbar');
-            if (tb) { tb.style.transform = `scale(${val})`; tb.style.transformOrigin = 'bottom center'; }
+            applyFontSize(val);
             getSettings().config.fontSize = val;
             save();
         });
@@ -1065,6 +1052,16 @@ function isMobile() {
     catch { return window.innerWidth <= 430; }
 }
 
+// CSS 변수로 폰트 크기 적용
+function applyFontSize(val) {
+    // S=0.88 → 11px / M=1.0 → 12px / L=1.18 → 14px
+    const base = Math.round(12 * val);
+    const popup = document.getElementById('et-popup');
+    const tb    = document.getElementById('et-toolbar');
+    if (popup) popup.style.setProperty('--et-base', base + 'px');
+    if (tb)    tb.style.setProperty('--et-base', base + 'px');
+}
+
 // ============================================================
 // 팝업 열기/닫기
 // ============================================================
@@ -1089,14 +1086,11 @@ function openPopup() {
         : 'position:relative;display:flex;width:min(480px,95vw);height:min(88vh,740px);border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,0.12);';
 
     popup.innerHTML = buildPopupInnerHTML();
-    // 저장된 폰트 크기 적용
-    const fontSize = getSettings().config.fontSize || 1.0;
-    if (fontSize !== 1.0) {
-        popup.style.transform = `scale(${fontSize})`;
-        popup.style.transformOrigin = 'center center';
-    }
     overlay.appendChild(popup);
     document.body.appendChild(overlay);
+    // 저장된 폰트 크기 적용
+    const fontSize = getSettings().config.fontSize || 1.0;
+    applyFontSize(fontSize);
     bindPopupEvents();
 }
 
