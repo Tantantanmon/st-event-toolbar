@@ -5,5 +5,5 @@
     "css": "style.css",
     "author": "your-name",
     "version": "1.0.0",
-    "auto_update": false
+    "auto_update": true
 }
