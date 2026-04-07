@@ -1,0 +1,9 @@
+{
+    "display_name": "Event Toolbar",
+    "loading_order": 10,
+    "js": "index.js",
+    "css": "style.css",
+    "author": "your-name",
+    "version": "1.0.0",
+    "auto_update": false
+}
