@@ -278,7 +278,6 @@ function buildHomePanel(cfg) {
         <div class="et-header">
             <div>
                 <div class="et-header-title">Event Toolbar</div>
-                <div class="et-header-sub">상황 태그 관리</div>
             </div>
             <button class="et-popup-close" id="et-popup-close">✕</button>
         </div>
@@ -298,6 +297,10 @@ function buildHomePanel(cfg) {
                 ${stylesHTML}
                 <button class="et-style-add" id="et-style-add">+ 스타일 추가</button>
             </div>
+            <div class="et-home-section">
+                <div class="et-home-label">Danger Zone</div>
+                <button class="et-reset-all-btn" id="et-reset-all">전체 초기화</button>
+            </div>
         </div>
     </div>`;
 }
@@ -314,7 +317,6 @@ function buildTagPanel(group, tags, label, isCustom) {
         <div class="et-header">
             <div>
                 <div class="et-header-title">${label}</div>
-                <div class="et-header-sub">${group} tags</div>
             </div>
             <div style="display:flex;align-items:center;gap:6px;">
                 <button class="et-group-del-btn" data-del-group="${group}">그룹 삭제</button>
@@ -360,9 +362,13 @@ function buildToolbarHTML() {
     return `
     <div id="et-toolbar">
         <div class="et-tb-group-row">
-            ${groupTabsHTML}
-            <button class="et-tb-close" id="et-tb-close">✕</button>
-            <button class="et-tb-collapse" id="et-tb-collapse">${tbCollapsed?'▲':'▼'}</button>
+            <div class="et-tb-groups-scroll">
+                ${groupTabsHTML}
+            </div>
+            <div class="et-tb-buttons">
+                <button class="et-tb-collapse" id="et-tb-collapse">${tbCollapsed?'▲':'▼'}</button>
+                <button class="et-tb-close" id="et-tb-close">✕</button>
+            </div>
         </div>
         <div class="et-tb-collapsible${tbCollapsed?' hidden':''}" id="et-tb-collapsible">
             <div class="et-tb-tags-area">${groupTagsHTML}</div>
@@ -499,6 +505,19 @@ function bindPopupEvents() {
         });
         save();
         refreshHomePanel();
+    });
+
+    // 전체 초기화
+    document.getElementById('et-reset-all')?.addEventListener('click', () => {
+        if (!confirm('모든 데이터를 초기화할까요? 되돌릴 수 없습니다.')) return;
+        delete extension_settings[EXT_NAME];
+        getSettings(); // 기본값으로 복구
+        save();
+        tbSelected = {};
+        refreshGroups();
+        renderToolbar();
+        closePopup();
+        openPopup();
     });
 
     // 팝업 이벤트 위임
@@ -696,6 +715,17 @@ function refreshHomePanel() {
         });
         save();
         refreshHomePanel();
+    });
+    document.getElementById('et-reset-all')?.addEventListener('click', () => {
+        if (!confirm('모든 데이터를 초기화할까요? 되돌릴 수 없습니다.')) return;
+        delete extension_settings[EXT_NAME];
+        getSettings();
+        save();
+        tbSelected = {};
+        refreshGroups();
+        renderToolbar();
+        closePopup();
+        openPopup();
     });
 }
 
@@ -895,6 +925,11 @@ function syncTagToPanel(group, val) {
     wrap.insertBefore(chip, addBtn);
 }
 
+function isMobile() {
+    try { return window.matchMedia('(max-width:430px),(pointer:coarse)').matches; }
+    catch { return window.innerWidth <= 430; }
+}
+
 // ============================================================
 // 팝업 열기/닫기
 // ============================================================
@@ -903,6 +938,11 @@ function openPopup() {
     if (popupOpen) return;
     popupOpen = true;
     document.body.insertAdjacentHTML('beforeend', buildPopupHTML());
+    // 모바일 클래스 추가
+    if (isMobile()) {
+        document.getElementById('et-overlay')?.classList.add('mobile');
+        document.getElementById('et-popup')?.classList.add('mobile');
+    }
     bindPopupEvents();
 }
 
